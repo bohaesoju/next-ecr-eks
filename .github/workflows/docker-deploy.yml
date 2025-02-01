@@ -1,39 +1,94 @@
-name: Build and Push Docker to ECR
+name: Build, Push to ECR, and Deploy to EKS
 on:
   push:
     branches:
       - main
+
+env:
+  AWS_REGION: ap-northeast-2        # 리전을 환경변수로 설정
+  DEPLOYMENT_NAME: nextjs-app       # 배포 이름
+  NAMESPACE: my-app                 # 네임스페이스
+
 jobs:
-  build-and-push:
+  build-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      # Checkout repository
+      # 1. 코드 체크아웃
       - name: Checkout code
         uses: actions/checkout@v4
-      # AWS Credentials 설정
+
+      # 2. AWS Credentials 설정
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-northeast-2
-      # Login to AWS ECR
+          aws-region: ${{ env.AWS_REGION }}
+
+      # 3. AWS ECR 로그인
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
-      # Build Docker image
+
+      # 4. Docker 이미지 태그에 커밋 해시 추가
+      - name: Get commit hash
+        id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      # 5. Docker 이미지 빌드
       - name: Build Docker image
         env:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-          IMAGE_TAG: latest
+          IMAGE_TAG: ${{ steps.vars.outputs.sha_short }}
         run: |
-          docker build -t $REGISTRY/$REPOSITORY:$IMAGE_TAG --build-arg ENV_MODE=production .
-      # Push Docker image to ECR
+          docker build -t $REGISTRY/$REPOSITORY:$IMAGE_TAG \
+                      -t $REGISTRY/$REPOSITORY:latest \
+                      --build-arg ENV_MODE=production .
+
+      # 6. Docker 이미지 ECR 푸시
       - name: Push Docker image to Amazon ECR
         env:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-          IMAGE_TAG: latest
+          IMAGE_TAG: ${{ steps.vars.outputs.sha_short }}
         run: |
           docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
+          docker push $REGISTRY/$REPOSITORY:latest
+
+      # 7. kubectl 설치
+      - name: Install kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+
+      # 8. kubeconfig 설정
+      - name: Configure kubeconfig
+        run: |
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ secrets.EKS_CLUSTER_NAME }}
+
+      # 9. Deployment 존재 여부 확인
+      - name: Check deployment exists
+        continue-on-error: true
+        run: |
+          kubectl get deployment ${{ env.DEPLOYMENT_NAME }} -n ${{ env.NAMESPACE }}
+
+      # 10. Deployment 업데이트
+      - name: Update Kubernetes Deployment
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ steps.vars.outputs.sha_short }}
+        run: |
+          kubectl set image deployment/${{ env.DEPLOYMENT_NAME }} \
+            nextjs=$REGISTRY/$REPOSITORY:$IMAGE_TAG \
+            -n ${{ env.NAMESPACE }}
+          kubectl rollout status deployment/${{ env.DEPLOYMENT_NAME }} \
+            -n ${{ env.NAMESPACE }}
+
+      # 11. 배포 상태 확인
+      - name: Verify deployment
+        run: |
+          kubectl get pods -n ${{ env.NAMESPACE }}
+          echo "Deployment completed successfully!"
