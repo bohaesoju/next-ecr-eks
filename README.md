@@ -1,4 +1,4 @@
-# Next.js 프로젝트 ECR 업로드 및 EKS 배포 가이드
+# Next.js 프로젝트 ECR 업로드 및 EKS 배포
 
 Next.js 프로젝트를 AWS ECR(Elastic Container Registry)에 업로드하고, AWS EKS(Elastic Kubernetes Service)에 배포
 
