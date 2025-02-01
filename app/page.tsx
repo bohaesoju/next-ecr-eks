@@ -5,12 +5,12 @@ export default function Home() {
         <h1 className="text-xl font-bold">Deploy Next.js to AWS EKS</h1>
         <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
           <li className="mb-2">
-            Build your Next.js project into a Docker image.
+            Build your Next.js project into a Docker image
           </li>
           <li className="mb-2">
-            Push the image to AWS Elastic Container Registry (ECR).</li>
+            Push the image to AWS Elastic Container Registry (ECR)</li>
           <li className="mb-2">
-            Deploy the image on AWS Elastic Kubernetes Service (EKS).</li>
+            Deploy the image on AWS Elastic Kubernetes Service (EKS)</li>
         </ol>
 
         <div className="flex gap-4 items-center flex-col sm:flex-row">
